@@ -211,6 +211,13 @@
             position: sticky;
             top: 0;
         }
+        th.sortable {
+            cursor: pointer;
+            user-select: none;
+        }
+        th.sortable:hover {
+            color: var(--text);
+        }
         .highlight td { color: var(--accent); font-weight: 700; }
         .rank-badge { display: inline-flex; min-width: 28px; justify-content: center; }
         .leaderboard-note {
@@ -352,7 +359,15 @@
         <p class="leaderboard-note">Το leaderboard είναι κοινό για όλους μέσω Firebase.</p>
         <div class="table-wrap">
             <table>
-                <thead><tr><th>#</th><th>Player</th><th>Score</th><th>Accuracy</th><th>Last Played</th></tr></thead>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th class="sortable" onclick="changeSort('name')">Player</th>
+                        <th class="sortable" onclick="changeSort('score')">Score</th>
+                        <th class="sortable" onclick="changeSort('accValue')">Accuracy</th>
+                        <th class="sortable" onclick="changeSort('lastPlayedTs')">Last Played</th>
+                    </tr>
+                </thead>
                 <tbody id="leaderboard-full-body"></tbody>
             </table>
         </div>
@@ -442,6 +457,7 @@ let firebaseDb = null;
 let firebaseApi = null;
 let selectedEntryId = null;
 let adminUnlocked = sessionStorage.getItem('quiz11_admin_unlocked') === 'true';
+let leaderboardSort = { key: 'score', direction: 'desc' };
 
 function normalizePlayerId(firstName, lastName) {
     return `${firstName.trim().toLowerCase()}::${lastName.trim().toLowerCase()}`;
@@ -511,12 +527,39 @@ function saveLeaderboard(entries) {
 }
 
 function sortLeaderboard(entries) {
+    const direction = leaderboardSort.direction === 'asc' ? 1 : -1;
+    const key = leaderboardSort.key;
+
     return [...entries].sort((a, b) => {
-        if (b.score !== a.score) return b.score - a.score;
+        let primary = 0;
+
+        if (key === 'name') {
+            primary = (a.name || '').localeCompare(b.name || '', 'el');
+        } else if (key === 'score') {
+            primary = (a.score || 0) - (b.score || 0);
+        } else if (key === 'accValue') {
+            primary = (a.accValue || 0) - (b.accValue || 0);
+        } else if (key === 'lastPlayedTs') {
+            primary = (a.lastPlayedTs || 0) - (b.lastPlayedTs || 0);
+        }
+
+        if (primary !== 0) return primary * direction;
+
+        if ((b.score || 0) !== (a.score || 0)) return (b.score || 0) - (a.score || 0);
         if ((b.accValue || 0) !== (a.accValue || 0)) return (b.accValue || 0) - (a.accValue || 0);
         if ((b.lastPlayedTs || 0) !== (a.lastPlayedTs || 0)) return (b.lastPlayedTs || 0) - (a.lastPlayedTs || 0);
         return (a.name || '').localeCompare(b.name || '', 'el');
     });
+}
+
+function changeSort(key) {
+    if (leaderboardSort.key === key) {
+        leaderboardSort.direction = leaderboardSort.direction === 'asc' ? 'desc' : 'asc';
+    } else {
+        leaderboardSort.key = key;
+        leaderboardSort.direction = key === 'name' ? 'asc' : 'desc';
+    }
+    renderLeaderboard(selectedEntryId || user.id);
 }
 
 function formatDate(ts) {
