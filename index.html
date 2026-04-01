@@ -337,7 +337,7 @@
         </div>
         <div class="table-wrap">
             <table>
-                <thead><tr><th>#</th><th>Παίκτης</th><th>High Score</th><th>Accuracy</th><th>Games</th></tr></thead>
+                <thead><tr><th>#</th><th>Παίκτης</th><th>Score</th><th>Accuracy</th><th>Date</th></tr></thead>
                 <tbody id="lb-body"></tbody>
             </table>
         </div>
@@ -352,13 +352,18 @@
         <p class="leaderboard-note">Το leaderboard είναι κοινό για όλους μέσω Firebase.</p>
         <div class="table-wrap">
             <table>
-                <thead><tr><th>#</th><th>Player</th><th>High Score</th><th>Accuracy</th><th>Games</th><th>Last Played</th></tr></thead>
+                <thead><tr><th>#</th><th>Player</th><th>Score</th><th>Accuracy</th><th>Last Played</th></tr></thead>
                 <tbody id="leaderboard-full-body"></tbody>
             </table>
         </div>
+        <div id="details-panel" class="details-panel">
+            <h3>Ανάλυση Συμμετοχής</h3>
+            <div id="details-content" class="details-empty">Πάτησε μια συμμετοχή από τον πίνακα για να δεις ποιες ερωτήσεις απαντήθηκαν σωστά και ποιες λάθος.</div>
+        </div>
         <div class="leaderboard-actions" style="margin-top:14px;">
             <button class="secondary" onclick="show('scr-login')">Back</button>
-            <button class="secondary" onclick="clearLeaderboard()">Καθαρισμός Leaderboard</button>
+            <button class="secondary" onclick="unlockAdmin()" id="btn-admin-unlock">Admin Unlock</button>
+            <button class="secondary admin-btn" onclick="clearLeaderboard()" id="btn-admin-reset">Καθαρισμός Leaderboard</button>
             <button onclick="restartQuiz()">New Game</button>
         </div>
     </div>
@@ -371,6 +376,7 @@ const QUIZ_TITLE = 'Quiz 11 General';
 const FIREBASE_SDK_VERSION = '12.7.0';
 const FIREBASE_COLLECTION = 'quiz11_general_leaderboard';
 const QUESTION_TIME = 15;
+const ADMIN_CONFIG = window.QUIZ11_ADMIN || { username: '', password: '' };
 
 const questions = [
     {
@@ -434,6 +440,8 @@ let lifeline5050Used = false, lifelineAudienceUsed = false;
 let firebaseReady = false;
 let firebaseDb = null;
 let firebaseApi = null;
+let selectedEntryId = null;
+let adminUnlocked = sessionStorage.getItem('quiz11_admin_unlocked') === 'true';
 
 function normalizePlayerId(firstName, lastName) {
     return `${firstName.trim().toLowerCase()}::${lastName.trim().toLowerCase()}`;
@@ -460,6 +468,35 @@ async function initFirebaseLeaderboard() {
     }
 }
 
+function updateAdminUi() {
+    const resetBtn = document.getElementById('btn-admin-reset');
+    const unlockBtn = document.getElementById('btn-admin-unlock');
+    if (!resetBtn || !unlockBtn) return;
+    resetBtn.classList.toggle('visible', adminUnlocked);
+    unlockBtn.textContent = adminUnlocked ? 'Admin Active' : 'Admin Unlock';
+}
+
+function createAttemptId() {
+    return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function buildAnswerReview() {
+    return questions.map((question, index) => {
+        const answer = answersStatus[index];
+        const selectedIndex = answer ? answer.selectedIndex : -1;
+        return {
+            questionIndex: index,
+            questionText: question.q,
+            selectedIndex,
+            selectedText: selectedIndex >= 0 ? question.o[selectedIndex] : 'Καμία απάντηση',
+            correctIndex: question.a,
+            correctText: question.o[question.a],
+            isCorrect: !!answer?.isCorrect,
+            rationale: question.r
+        };
+    });
+}
+
 function getLeaderboard() {
     try {
         const raw = JSON.parse(localStorage.getItem(LEADERBOARD_KEY) || '[]');
@@ -477,6 +514,7 @@ function sortLeaderboard(entries) {
     return [...entries].sort((a, b) => {
         if (b.score !== a.score) return b.score - a.score;
         if ((b.accValue || 0) !== (a.accValue || 0)) return (b.accValue || 0) - (a.accValue || 0);
+        if ((b.lastPlayedTs || 0) !== (a.lastPlayedTs || 0)) return (b.lastPlayedTs || 0) - (a.lastPlayedTs || 0);
         return (a.name || '').localeCompare(b.name || '', 'el');
     });
 }
@@ -498,14 +536,17 @@ function normalizeRemoteEntries(entries) {
         const totalWrong = Number(entry.total_wrong || 0);
         const totalAnswers = totalCorrect + totalWrong;
         const accValue = totalAnswers > 0 ? Math.round((totalCorrect / totalAnswers) * 100) : 0;
+        const lastPlayed = entry.last_played || null;
         return {
-            id: entry.id || normalizePlayerId(entry.first_name || '', entry.last_name || ''),
+            id: entry.id || createAttemptId(),
             name: `${entry.first_name || ''} ${entry.last_name || ''}`.trim(),
-            score: Number(entry.high_score || 0),
+            score: Number(entry.score || entry.high_score || 0),
             acc: `${accValue}%`,
             accValue,
             games: Number(entry.games || 1),
-            lastPlayed: entry.last_played || null
+            lastPlayed,
+            lastPlayedTs: lastPlayed ? Date.parse(lastPlayed) : 0,
+            answers: Array.isArray(entry.answers) ? entry.answers : []
         };
     });
 }
@@ -516,20 +557,19 @@ async function fetchRemoteLeaderboard() {
 }
 
 async function submitRemoteScore(payload) {
-    const docId = normalizePlayerId(payload.first_name, payload.last_name);
-    const ref = firebaseApi.doc(firebaseDb, FIREBASE_COLLECTION, docId);
-    const snap = await firebaseApi.getDoc(ref);
-    const current = snap.exists() ? snap.data() : null;
-    await firebaseApi.setDoc(ref, {
+    const docId = createAttemptId();
+    await firebaseApi.setDoc(firebaseApi.doc(firebaseDb, FIREBASE_COLLECTION, docId), {
         id: docId,
+        player_id: normalizePlayerId(payload.first_name, payload.last_name),
         first_name: payload.first_name,
         last_name: payload.last_name,
-        high_score: Math.max(Number(current?.high_score || 0), Number(payload.score || 0)),
-        total_correct: Number(current?.total_correct || 0) + Number(payload.correct || 0),
-        total_wrong: Number(current?.total_wrong || 0) + Number(payload.wrong || 0),
-        games: Number(current?.games || 0) + 1,
+        score: Number(payload.score || 0),
+        total_correct: Number(payload.correct || 0),
+        total_wrong: Number(payload.wrong || 0),
+        games: 1,
+        answers: Array.isArray(payload.answers) ? payload.answers : [],
         last_played: new Date().toISOString()
-    }, { merge: true });
+    });
 }
 
 async function resetRemoteLeaderboard() {
@@ -547,20 +587,84 @@ function renderLeaderboardEntries(entries, targetId = user.id) {
             <td>${p.name}</td>
             <td>${p.score}</td>
             <td>${p.acc}</td>
-            <td>${p.games || 1}</td>
+            <td>${formatDate(p.lastPlayed)}</td>
         </tr>`).join('') : '<tr><td colspan="5">Δεν υπάρχουν παίκτες ακόμα.</td></tr>';
 
     document.getElementById('leaderboard-full-body').innerHTML = entries.length ? entries.map((p, i) => `
-        <tr class="${p.id === targetId ? 'highlight' : ''}">
+        <tr class="entry-row ${p.id === targetId ? 'highlight' : ''}" onclick="showEntryDetails('${p.id}')">
             <td><span class="rank-badge">${medals[i] || (i + 1)}</span></td>
             <td>${p.name}</td>
             <td>${p.score}</td>
             <td>${p.acc}</td>
-            <td>${p.games || 1}</td>
             <td>${formatDate(p.lastPlayed)}</td>
-        </tr>`).join('') : '<tr><td colspan="6">Δεν υπάρχουν παίκτες ακόμα.</td></tr>';
+        </tr>`).join('') : '<tr><td colspan="5">Δεν υπάρχουν παίκτες ακόμα.</td></tr>';
+
+    if (!selectedEntryId && entries.length) {
+        selectedEntryId = targetId && entries.some(entry => entry.id === targetId) ? targetId : entries[0].id;
+    } else if (selectedEntryId && !entries.some(entry => entry.id === selectedEntryId)) {
+        selectedEntryId = entries.length ? entries[0].id : null;
+    }
+
+    renderDetailsPanel(entries.find(entry => entry.id === selectedEntryId) || null);
+    updateAdminUi();
 
     return entries;
+}
+
+function renderDetailsPanel(entry) {
+    const detailsContent = document.getElementById('details-content');
+    if (!detailsContent) return;
+
+    if (!entry) {
+        detailsContent.className = 'details-empty';
+        detailsContent.innerHTML = 'Πάτησε μια συμμετοχή από τον πίνακα για να δεις ποιες ερωτήσεις απαντήθηκαν σωστά και ποιες λάθος.';
+        return;
+    }
+
+    const answers = Array.isArray(entry.answers) ? entry.answers : [];
+    const correctAnswers = answers.filter(answer => answer.isCorrect).length;
+    detailsContent.className = '';
+    detailsContent.innerHTML = `
+        <div class="question-review-meta">
+            <strong>${entry.name}</strong><br>
+            Score: ${entry.score} | Accuracy: ${entry.acc} | Correct: ${correctAnswers}/${questions.length}<br>
+            Played: ${formatDate(entry.lastPlayed)}
+        </div>
+        <div class="question-review">
+            ${answers.length ? answers.map((answer, index) => `
+                <div class="question-review-item ${answer.isCorrect ? 'correct-review' : 'wrong-review'}">
+                    <div class="question-review-status">${answer.isCorrect ? 'Σωστό' : 'Λάθος'}</div>
+                    <div class="question-review-text">${index + 1}. ${answer.questionText}</div>
+                    <div class="question-review-meta">
+                        Δική του απάντηση: ${answer.selectedText}<br>
+                        Σωστή απάντηση: ${answer.correctText}
+                    </div>
+                </div>
+            `).join('') : '<div class="details-empty">Δεν υπάρχουν διαθέσιμες λεπτομέρειες για αυτή τη συμμετοχή.</div>'}
+        </div>
+    `;
+}
+
+function showEntryDetails(entryId) {
+    selectedEntryId = entryId;
+    renderLeaderboard();
+}
+
+function unlockAdmin() {
+    const username = prompt('Admin username:');
+    if (username === null) return;
+    const password = prompt('Admin password:');
+    if (password === null) return;
+
+    if (username === ADMIN_CONFIG.username && password === ADMIN_CONFIG.password) {
+        adminUnlocked = true;
+        sessionStorage.setItem('quiz11_admin_unlocked', 'true');
+        updateAdminUi();
+        alert('Admin ενεργοποιήθηκε.');
+        return;
+    }
+
+    alert('Λάθος στοιχεία admin.');
 }
 
 async function renderLeaderboard(targetId = user.id) {
@@ -623,14 +727,20 @@ function restartQuiz() {
 }
 
 async function clearLeaderboard() {
+    if (!adminUnlocked) {
+        alert('Μόνο ο διαχειριστής μπορεί να κάνει εκκαθάριση leaderboard.');
+        return;
+    }
     if (!confirm('Θέλεις σίγουρα εκκαθάριση leaderboard;')) return;
     if (firebaseReady) {
         await resetRemoteLeaderboard();
+        selectedEntryId = null;
         await renderLeaderboard();
         alert('Το online leaderboard καθαρίστηκε.');
         return;
     }
     localStorage.removeItem(LEADERBOARD_KEY);
+    selectedEntryId = null;
     renderLeaderboardEntries([], user.id);
 }
 
@@ -638,6 +748,7 @@ function loadQuestion() {
     clearInterval(timer);
     const q = questions[cur];
     const isAnswered = answersStatus[cur] !== undefined;
+    const answeredState = answersStatus[cur];
 
     document.getElementById('q-num').textContent = cur + 1;
     document.getElementById('q-text').textContent = q.q;
@@ -678,7 +789,7 @@ function loadQuestion() {
         if (isAnswered) {
             btn.disabled = true;
             if (i === q.a) btn.classList.add('correct');
-            else if (i === answersStatus[cur]) btn.classList.add('wrong');
+            else if (i === answeredState?.selectedIndex && !answeredState?.isCorrect) btn.classList.add('wrong');
         } else {
             btn.onclick = () => checkAnswer(i);
         }
@@ -708,11 +819,12 @@ function loadQuestion() {
 function checkAnswer(idx) {
     clearInterval(timer);
     const q = questions[cur];
-    answersStatus[cur] = idx;
+    const isCorrect = idx === q.a;
+    answersStatus[cur] = { selectedIndex: idx, isCorrect };
     const btns = document.querySelectorAll('.option-btn');
     btns.forEach(btn => { btn.disabled = true; btn.onclick = null; });
 
-    if (idx === q.a) {
+    if (isCorrect) {
         btns[idx].classList.add('correct');
         score += 100 + Math.round(timeLeft * 10);
         correct++;
@@ -789,6 +901,9 @@ async function endQuiz() {
     document.getElementById('final-msg').textContent = `Τέλος! Σκορ: ${score} πόντοι`;
     const accuracyValue = Math.round((correct / questions.length) * 100);
     const acc = `${accuracyValue}%`;
+    const answers = buildAnswerReview();
+    const attemptId = createAttemptId();
+    const lastPlayed = Date.now();
     let sorted = [];
 
     if (firebaseReady) {
@@ -797,39 +912,40 @@ async function endQuiz() {
             last_name: user.l,
             score,
             correct,
-            wrong: questions.length - correct
+            wrong: questions.length - correct,
+            answers
         });
-        sorted = await renderLeaderboard(user.id);
+        sorted = await renderLeaderboard();
     } else {
         const lb = getLeaderboard();
-        const existing = lb.find(item => item.id === user.id);
-        const now = Date.now();
-
-        if (existing) {
-            existing.name = `${user.f} ${user.l}`;
-            existing.score = Math.max(existing.score, score);
-            existing.accValue = Math.max(existing.accValue || 0, accuracyValue);
-            existing.acc = `${existing.accValue}%`;
-            existing.games = (existing.games || 1) + 1;
-            existing.lastPlayed = now;
-        } else {
-            lb.push({
-                id: user.id,
-                name: `${user.f} ${user.l}`,
-                score,
-                acc,
-                accValue: accuracyValue,
-                games: 1,
-                lastPlayed: now
-            });
-        }
+        lb.push({
+            id: attemptId,
+            name: `${user.f} ${user.l}`,
+            score,
+            acc,
+            accValue: accuracyValue,
+            games: 1,
+            lastPlayed,
+            lastPlayedTs: lastPlayed,
+            answers
+        });
 
         sorted = sortLeaderboard(lb);
         saveLeaderboard(sorted);
-        renderLeaderboardEntries(sorted, user.id);
+        selectedEntryId = attemptId;
+        renderLeaderboardEntries(sorted, attemptId);
     }
 
-    const rank = sorted.findIndex(item => item.id === user.id) + 1;
+    if (firebaseReady) {
+        const matchedEntry = sorted.find(item =>
+            item.name === `${user.f} ${user.l}` &&
+            item.score === score &&
+            item.lastPlayedTs && Math.abs(item.lastPlayedTs - lastPlayed) < 10000
+        );
+        selectedEntryId = matchedEntry ? matchedEntry.id : (sorted[0]?.id || null);
+    }
+
+    const rank = sorted.findIndex(item => item.id === selectedEntryId) + 1;
     document.getElementById('summary-score').textContent = score;
     document.getElementById('summary-correct').textContent = `${correct}/${questions.length}`;
     document.getElementById('summary-rank').textContent = rank ? `#${rank}` : '-';
