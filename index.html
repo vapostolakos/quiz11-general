@@ -36,35 +36,40 @@
             content: "?\00a0\00a0\00a0\00a0?\00a0\00a0\00a0\00a0?\00a0\00a0\00a0\00a0?\00a0\00a0\00a0\00a0?\A?\00a0\00a0\00a0\00a0?\00a0\00a0\00a0\00a0?\00a0\00a0\00a0\00a0?\00a0\00a0\00a0\00a0?\A?\00a0\00a0\00a0\00a0?\00a0\00a0\00a0\00a0?\00a0\00a0\00a0\00a0?\00a0\00a0\00a0\00a0?";
             position: fixed;
             inset: 0;
-            font-size: clamp(4.5rem, 10vw, 8rem);
-            line-height: 1.35;
-            letter-spacing: 2.4rem;
+            font-size: clamp(5.8rem, 13vw, 10rem);
+            line-height: 1.12;
+            letter-spacing: 2.1rem;
             white-space: pre-wrap;
             word-break: break-word;
-            color: rgba(255, 255, 255, 0.06);
+            font-weight: 900;
+            color: rgba(255, 255, 255, 0.14);
+            text-shadow:
+                0 0 10px rgba(255, 255, 255, 0.08),
+                0 0 24px rgba(255, 255, 255, 0.04);
             z-index: 0;
             pointer-events: none;
-            transform: rotate(-14deg) scale(1.2) translate(-2%, -2%);
+            transform: rotate(-14deg) scale(1.22) translate(-1%, -4%);
             opacity: 1;
         }
         body::after {
             content: "Quiz Nights";
             position: fixed;
-            inset: 0;
+            top: 3.5vh;
+            left: 0;
+            right: 0;
             display: flex;
-            align-items: center;
             justify-content: center;
-            font-size: clamp(4.2rem, 11vw, 9rem);
+            font-size: clamp(2.8rem, 7vw, 5.8rem);
             font-weight: 900;
-            letter-spacing: 0.18em;
+            letter-spacing: 0.22em;
             text-transform: uppercase;
-            color: rgba(255, 255, 255, 0.045);
+            color: rgba(245, 158, 11, 0.2);
             text-shadow:
-                0 0 1px rgba(255, 255, 255, 0.08),
-                0 18px 48px rgba(0, 0, 0, 0.35);
+                0 0 10px rgba(245, 158, 11, 0.12),
+                0 10px 30px rgba(0, 0, 0, 0.28);
             z-index: 0;
             pointer-events: none;
-            transform: rotate(-10deg) translateY(2%);
+            transform: none;
         }
         .container {
             width: min(100%, 720px);
