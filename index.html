@@ -219,6 +219,60 @@
             text-align: center;
             line-height: 1.5;
         }
+        .entry-row { cursor: pointer; }
+        .entry-row:hover td { background: rgba(14, 165, 233, 0.08); }
+        .details-panel {
+            margin-top: 16px;
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            background: #0f172a;
+            padding: 14px;
+        }
+        .details-panel h3 {
+            color: var(--accent);
+            margin-bottom: 10px;
+            font-size: 1rem;
+        }
+        .details-empty {
+            color: var(--muted);
+            text-align: center;
+            line-height: 1.5;
+        }
+        .question-review {
+            display: grid;
+            gap: 10px;
+            margin-top: 12px;
+        }
+        .question-review-item {
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 12px;
+            background: rgba(30, 41, 59, 0.75);
+        }
+        .question-review-item.correct-review { border-color: rgba(16, 185, 129, 0.45); }
+        .question-review-item.wrong-review { border-color: rgba(239, 68, 68, 0.45); }
+        .question-review-status {
+            display: inline-block;
+            margin-bottom: 8px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+        .correct-review .question-review-status { color: var(--success); }
+        .wrong-review .question-review-status { color: var(--danger); }
+        .question-review-text {
+            font-weight: 700;
+            line-height: 1.45;
+            margin-bottom: 8px;
+        }
+        .question-review-meta {
+            color: #cbd5e1;
+            line-height: 1.5;
+            font-size: 0.92rem;
+        }
+        .admin-btn { display: none; }
+        .admin-btn.visible { display: inline-block; }
         @media (max-width: 640px) {
             .container { padding: 1rem; }
             .quiz-header, .top-actions, .leaderboard-actions, .nav-controls, .lifeline-container {
